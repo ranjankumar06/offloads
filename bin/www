@@ -1,0 +1,151 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require("../app");
+var debug = require("debug")("offloads:server");
+var http = require("http");
+const chatconnection = require("../models/ChatConnection");
+const { Server } = require("socket.io");
+const cors = require("cors");
+const chat = require("../models/chat");
+const { create } = require("domain");
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || "3001");
+app.set("port", port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+app.use(cors());
+var server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: ["http://3.11.155.226:3000","http://localhost:3000"],
+    methods: ["GET", "POST"],
+  },
+});
+
+io.on("connection", (socket) => {
+  console.log(`user connected : ${socket.id}`);
+
+  socket.on("join_user", async (data) => {
+    console.log("user ----data", data);
+    const aa = await chatconnection.findOne({
+      where: { id: data.connectionId },
+    });
+    let token;
+    if (data.userId === aa.userid_1) {
+      token = aa.Token_1;
+    } else {
+      token = aa.Token_2;
+    }
+    console.log("token for joining room",token);
+
+    console.log("user -- join --data", token);
+    socket.join(token);
+  });
+  socket.on("send_message", async (data) => {
+    console.log("send_message", data);
+    var Attachment=data.attachment
+    var message = data.message;
+    var userId = data.userId;
+    var connectionId = data.connectionId;
+    const aa = await chatconnection.findOne({ where: { id: connectionId } });
+    let token;
+    let sender;
+    let recever;
+    if ((userId === aa.userid_1)) {
+      token = aa.Token_2;
+      sender = aa.userid_1;
+      recever = aa.userid_2;
+    } else {
+      token = aa.Token_1;
+      sender = aa.userid_2;
+      recever = aa.userid_1;
+    }
+    const datasave = await chat.create({
+      Text:message,
+      senderid: sender,
+      reciverid: recever,
+      ChatconnectionId:connectionId,
+      Attachment:Attachment
+    });
+  console.log("token for message",token);
+
+    io.in(token).emit("receive_message", datasave);
+  });
+});
+server.listen(port);
+server.on("error", onError);
+server.on("listening", onListening);
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== "listen") {
+    throw error;
+  }
+
+  var bind = typeof port === "string" ? "Pipe " + port : "Port " + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case "EACCES":
+      console.error(bind + " requires elevated privileges");
+      process.exit(1);
+      break;
+    case "EADDRINUSE":
+      console.error(bind + " is already in use");
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === "string" ? "pipe " + addr : "port " + addr.port;
+  debug("Listening on " + bind);
+  console.log("Listening on " + bind);
+}
